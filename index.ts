@@ -1,8 +1,15 @@
 import sharp from "sharp";
+import { rename } from "fs/promises";
 
-resizeAndOptimizeImages("./imgs/20260224_110030.jpg").catch((e) =>
-  console.error("error happened", e),
-);
+const filePaths = process.argv.slice(2);
+if (filePaths.length === 0) {
+  console.error("Usage: ts-node script.ts <image1.jpg> <image2.jpg> ...");
+  process.exit(1);
+}
+
+Promise.all(filePaths.map(resizeAndOptimizeImages))
+  .then(() => console.log("All files processed successfully!"))
+  .catch(console.error);
 
 // ==============================
 
@@ -17,45 +24,34 @@ interface Size {
 // === main function ===
 async function resizeAndOptimizeImages(imgPath: string) {
   const sizes: Size[] = [
-    { platform: "mobile", width: 854, height: 480 }, //480p
+    // { platform: "mobile", width: 854, height: 480 }, //480p
     { platform: "desktop", width: 1280, height: 720 }, //720p
   ];
 
-  var pipeline: sharp.Sharp;
-  const baseName = "./out/processed_img";
-
-  console.log("-- start transformation --");
+  console.log(`-- start transformation: ${imgPath} --`);
   for (var size of sizes) {
     // core pipeline to be replicated across the IMG encoders
-    pipeline = sharp(imgPath).resize({
+    const pipeline = sharp(imgPath).resize({
       width: size.width,
       height: size.height,
       fit: "cover", // fit in the shadcn cards nicely
-      kernel: "lanczos3", // high qulaity resampling
+      kernel: "lanczos3", // high quality resampling
     });
-
-    await saveImages(pipeline, baseName, size.platform);
+    await saveImages(pipeline, imgPath);
   }
 
-  console.log("-- DONE transformation --");
+  console.log(`-- DONE transformation: ${imgPath} --`);
 }
 
 async function saveImages(
   pipeline: sharp.Sharp,
-  baseName: string,
-  platform: Platform,
+  imgPath: string,
 ): Promise<void> {
-  // 1. generate AVIF & JPEG in parallel
-  await Promise.all([
-    pipeline
-      .clone()
-      .avif({ quality: 65, effort: 4 })
-      .toFile(`${baseName}_${platform}.avif`),
-    pipeline
-      .clone()
-      .jpeg({ mozjpeg: true, quality: 75 })
-      .toFile(`${baseName}_${platform}.jpg`),
-  ]);
+  const tempPath = `${imgPath}.tmp`;
 
-  console.log(`+ generated ${platform} versions (AVIF & JPEG).`);
+  // 1. generate JPEG only
+  await pipeline.clone().jpeg({ mozjpeg: true, quality: 90 }).toFile(tempPath);
+
+  // overwrite original file with processed version
+  await rename(tempPath, imgPath);
 }
